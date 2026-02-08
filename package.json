@@ -1,0 +1,56 @@
+{
+  "name": "wgsl-live-preview",
+  "displayName": "WGSL Live Preview",
+  "version": "1.0.0",
+  "description": "Live preview for WGSL shaders",
+  "publisher": "ruchkin.evgenii@proton.me",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onLanguage:wgsl"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "wgsl-live-preview.showPreview",
+        "title": "WGSL: Show Live Preview"
+      }
+    ],
+    "languages": [
+      {
+        "id": "wgsl",
+        "extensions": [".wgsl"],
+        "aliases": ["WGSL", "wgsl"]
+      }
+    ],
+    "keybindings": [
+    {
+      "command": "wgsl-live-preview.showPreview",
+      "key": "ctrl+shift+w",
+      "when": "editorLangId == wgsl"
+    },
+    {
+      "command": "workbench.action.webview.openDeveloperTools",
+      "key": "ctrl+shift+i",
+      "when": "activeWebviewPanelId == 'wgslPreview'"
+    }
+  ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.2",
+    "@types/vscode": "^1.109.0",
+    "@vscode/vsce": "^3.7.1",
+    "typescript": "^5.9.3"
+  }
+}
