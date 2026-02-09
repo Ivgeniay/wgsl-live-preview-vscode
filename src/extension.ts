@@ -41,7 +41,7 @@ export function activate(context: vscode.ExtensionContext) {
                 }, null, context.subscriptions);
             }
 
-            const shaderCode = editor.document.getText();
+            const shaderCode = injectGlobals(editor.document.getText());
             console.log('Sending shader code, length:', shaderCode.length);
             currentPanel.webview.postMessage({
                 command: 'updateShader',
@@ -50,14 +50,22 @@ export function activate(context: vscode.ExtensionContext) {
         }
     );
 
-    const changeDocumentSubscription = vscode.workspace.onDidSaveTextDocument(document => {
-        if (document.languageId === 'wgsl' && currentPanel) {
-            const shaderCode = document.getText();
-            console.log('File saved, updating shader, length:', shaderCode.length);
-            currentPanel.webview.postMessage({
-                command: 'updateShader',
-                code: shaderCode
-            });
+    let updateTimeout: NodeJS.Timeout | undefined;
+
+    const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(event => {
+        if (event.document.languageId === 'wgsl' && currentPanel) {
+            if (updateTimeout) {
+                clearTimeout(updateTimeout);
+            }
+            
+            updateTimeout = setTimeout(() => {
+                const shaderCode = injectGlobals(event.document.getText());
+                console.log('Document changed, updating shader, length:', shaderCode.length);
+                currentPanel!.webview.postMessage({
+                    command: 'updateShader',
+                    code: shaderCode
+                });
+            }, 100);
         }
     });
 
@@ -68,6 +76,16 @@ export function activate(context: vscode.ExtensionContext) {
 function getWebviewContent(): string {
     const htmlPath = path.join(__dirname, 'webview', 'preview.html');
     return fs.readFileSync(htmlPath, 'utf8');
+}
+
+function getGlobals(): string {
+    const globalsPath = path.join(__dirname, 'webview', 'globals.wgsl');
+    return fs.readFileSync(globalsPath, 'utf8');
+}
+
+function injectGlobals(shaderCode: string): string {
+    const globalsCode = getGlobals();
+    return globalsCode + shaderCode;
 }
 
 export function deactivate() {}

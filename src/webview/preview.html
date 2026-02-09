@@ -61,7 +61,19 @@
         let context = null;
         let pipeline = null;
         let vertexBuffer = null;
+        let uniformBuffer = null;
+        let uniformBindGroup = null;
         let currentShaderCode = '';
+
+        let startTime = performance.now();
+        let lastFrameTime = performance.now();
+        let frameCount = 0;
+
+        let mouseX = 0;
+        let mouseY = 0;
+        let mouseClickX = 0;
+        let mouseClickY = 0;
+        let mouseButtons = 0;
 
         async function initWebGPU() {
             console.log('navigator.gpu:', navigator.gpu);
@@ -93,6 +105,7 @@
                 });
 
                 createVertexBuffer();
+                createUniformBuffer();
                 
                 console.log('WebGPU initialized successfully');
                 return true;
@@ -122,13 +135,80 @@
             vertexBuffer.unmap();
         }
 
-        function createPipeline(shaderCode) {
+        function createUniformBuffer() {
+            const bufferSize = 48;
+            
+            uniformBuffer = device.createBuffer({
+                size: bufferSize,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+            });
+            
+            console.log('Uniform buffer created, size:', bufferSize);
+        }
+
+        function updateUniforms() {
+            const currentTime = performance.now();
+            const time = (currentTime - startTime) / 1000.0;
+            const timeDelta = (currentTime - lastFrameTime) / 1000.0;
+            lastFrameTime = currentTime;
+            
+            const data = new ArrayBuffer(48);
+            const view = new DataView(data);
+            
+            view.setFloat32(0, time, true);
+            view.setFloat32(4, timeDelta, true);
+            view.setUint32(8, frameCount, true);
+            
+            view.setFloat32(16, canvas.width, true);
+            view.setFloat32(20, canvas.height, true);
+            view.setFloat32(24, mouseX, true);
+            view.setFloat32(28, mouseY, true);
+            
+            view.setFloat32(32, mouseClickX, true);
+            view.setFloat32(36, mouseClickY, true);
+            view.setUint32(40, mouseButtons, true);
+            
+            device.queue.writeBuffer(uniformBuffer, 0, data);
+            
+            frameCount++;
+        }
+
+        function createBindGroup() {
+            if (!pipeline || !uniformBuffer) {
+                return;
+            }
+            
+            uniformBindGroup = device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(3),
+                entries: [{
+                    binding: 0,
+                    resource: {
+                        buffer: uniformBuffer
+                    }
+                }]
+            });
+            
+            console.log('Bind group created');
+        }
+
+        async function createPipeline(shaderCode) {
             try {
                 console.log('Creating pipeline with shader:', shaderCode);
                 
                 const shaderModule = device.createShaderModule({
                     code: shaderCode
                 });
+
+                const compilationInfo = await shaderModule.getCompilationInfo();
+                
+                for (const message of compilationInfo.messages) {
+                    if (message.type === 'error') {
+                        const errorText = `Shader compilation error at line ${message.lineNum}:${message.linePos}: ${message.message}`;
+                        console.error(errorText);
+                        showError(errorText);
+                        return false;
+                    }
+                }
 
                 const pipelineDescriptor = {
                     layout: 'auto',
@@ -158,23 +238,24 @@
 
                 pipeline = device.createRenderPipeline(pipelineDescriptor);
                 console.log('Pipeline created successfully');
+                createBindGroup();
                 hideError();
                 return true;
             } catch (error) {
-                console.error('Shader compilation error:', error);
-                showError('Shader compilation error: ' + error.message);
+                console.error('Pipeline creation error:', error);
+                showError('Pipeline creation error: ' + error.message);
                 return false;
             }
         }
 
         function render() {
-            if (!device || !pipeline) {
-                console.log('Cannot render: device or pipeline not ready');
+            if (!device || !pipeline || !uniformBindGroup) {
+                console.log('Cannot render: device, pipeline or bind group not ready');
                 return;
             }
 
-            console.log('Rendering...');
-            
+            updateUniforms();
+
             const commandEncoder = device.createCommandEncoder();
             const textureView = context.getCurrentTexture().createView();
 
@@ -189,13 +270,12 @@
 
             const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
             passEncoder.setPipeline(pipeline);
+            passEncoder.setBindGroup(3, uniformBindGroup);
             passEncoder.setVertexBuffer(0, vertexBuffer);
             passEncoder.draw(6, 1, 0, 0);
             passEncoder.end();
 
             device.queue.submit([commandEncoder.finish()]);
-            
-            console.log('Render complete');
         }
 
         function showError(message) {
@@ -238,18 +318,56 @@
             }
         });
 
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = (e.clientX - rect.left) / rect.width;
+            mouseY = 1.0 - (e.clientY - rect.top) / rect.height;
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseClickX = (e.clientX - rect.left) / rect.width;
+            mouseClickY = 1.0 - (e.clientY - rect.top) / rect.height;
+            
+            if (e.button === 0) mouseButtons |= 1;
+            if (e.button === 1) mouseButtons |= 4;
+            if (e.button === 2) mouseButtons |= 2;
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (e.button === 0) mouseButtons &= ~1;
+            if (e.button === 1) mouseButtons &= ~4;
+            if (e.button === 2) mouseButtons &= ~2;
+        });
+
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+
+        function renderLoop() {
+            if (pipeline) {
+                render();
+            }
+            requestAnimationFrame(renderLoop);
+        }
+
         initWebGPU().then(success => {
             if (success) {
                 resizeCanvas();
                 
                 if (currentShaderCode) {
                     console.log('Device ready, compiling shader that was received earlier');
-                    if (createPipeline(currentShaderCode)) {
-                        render();
-                    }
+                    createPipeline(currentShaderCode).then(success => {
+                        if (success) {
+                            renderLoop();
+                        }
+                    });
+                } else {
+                    renderLoop();
                 }
             }
         });
+    
     </script>
 </body>
 </html>
