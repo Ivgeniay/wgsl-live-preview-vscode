@@ -146,6 +146,22 @@
             console.log('Uniform buffer created, size:', bufferSize);
         }
 
+        function createPipelineLayout() {
+            const bindGroupLayout = device.createBindGroupLayout({
+                entries: [{
+                    binding: 0,
+                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                    buffer: {
+                        type: 'uniform'
+                    }
+                }]
+            });
+            
+            return device.createPipelineLayout({
+                bindGroupLayouts: [null, null, null, bindGroupLayout]
+            });
+        }
+
         function updateUniforms() {
             const currentTime = performance.now();
             const time = (currentTime - startTime) / 1000.0;
@@ -177,18 +193,33 @@
             if (!pipeline || !uniformBuffer) {
                 return;
             }
-            
-            uniformBindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(3),
+
+            const bindGroupLayout = device.createBindGroupLayout({
                 entries: [{
                     binding: 0,
-                    resource: {
-                        buffer: uniformBuffer
+                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                    buffer: {
+                        type: 'uniform'
                     }
                 }]
             });
-            
-            console.log('Bind group created');
+
+            try {
+                uniformBindGroup = device.createBindGroup({
+                    layout: bindGroupLayout,
+                    entries: [{
+                        binding: 0,
+                        resource: {
+                            buffer: uniformBuffer
+                        }
+                    }]
+                });
+                
+                console.log('Bind group created');
+            } catch (error) {
+                console.warn('Could not create bind group (shader may not use wgsl_globals):', error);
+                uniformBindGroup = null;
+            }
         }
 
         async function createPipeline(shaderCode) {
@@ -211,7 +242,7 @@
                 }
 
                 const pipelineDescriptor = {
-                    layout: 'auto',
+                    layout: createPipelineLayout(),
                     vertex: {
                         module: shaderModule,
                         entryPoint: 'vs_main',
@@ -249,7 +280,7 @@
         }
 
         function render() {
-            if (!device || !pipeline || !uniformBindGroup) {
+            if (!device || !pipeline) {
                 console.log('Cannot render: device, pipeline or bind group not ready');
                 return;
             }
@@ -270,7 +301,9 @@
 
             const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
             passEncoder.setPipeline(pipeline);
-            passEncoder.setBindGroup(3, uniformBindGroup);
+            if (uniformBindGroup) {
+                passEncoder.setBindGroup(3, uniformBindGroup);
+            }
             passEncoder.setVertexBuffer(0, vertexBuffer);
             passEncoder.draw(6, 1, 0, 0);
             passEncoder.end();

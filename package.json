@@ -1,15 +1,32 @@
 {
   "name": "wgsl-live-preview",
+  "icon": "icon.png",
   "displayName": "WGSL Live Preview",
-  "version": "1.0.0",
-  "description": "Live preview for WGSL shaders",
-  "publisher": "ruchkin.evgenii@proton.me",
+  "version": "0.0.1",
+  "description": "Live preview for WGSL (WebGPU Shading Language) shaders with real-time rendering",
+  "publisher": "EvgeniiRuchkin",
+  "author": "Evgenii",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ivgeniay/wgsl-live-preview-vscode"
+  },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.109.0"
   },
   "categories": [
     "Programming Languages",
     "Visualization"
+  ],
+  "keywords": [
+    "wgsl",
+    "webgpu",
+    "shader",
+    "glsl",
+    "graphics",
+    "preview",
+    "live",
+    "rendering"
   ],
   "activationEvents": [
     "onLanguage:wgsl"
@@ -34,11 +51,6 @@
       "command": "wgsl-live-preview.showPreview",
       "key": "ctrl+shift+w",
       "when": "editorLangId == wgsl"
-    },
-    {
-      "command": "workbench.action.webview.openDeveloperTools",
-      "key": "ctrl+shift+i",
-      "when": "activeWebviewPanelId == 'wgslPreview'"
     }
   ]
   },

@@ -85,7 +85,8 @@ function getGlobals(): string {
 
 function injectGlobals(shaderCode: string): string {
     const globalsCode = getGlobals();
-    return globalsCode + shaderCode;
+    return shaderCode + globalsCode;
+    //return globalsCode + shaderCode;
 }
 
 export function deactivate() {}
