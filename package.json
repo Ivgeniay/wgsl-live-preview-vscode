@@ -44,7 +44,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && node copy-assets.js",
     "watch": "tsc -watch -p ./"
   },
   "devDependencies": {

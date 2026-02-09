@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WGSL Preview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #1e1e1e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        #canvas {
+            display: block;
+            border: 2px solid #3c3c3c;
+            border-radius: 0px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            max-width: 100%;
+            max-height: 100%;
+            width: 800px;
+            height: 600px;
+        }
+        
+        #error {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            color: #f48771;
+            background: rgba(30, 30, 30, 0.95);
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #f48771;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            display: none;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="error"></div>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const errorDiv = document.getElementById('error');
+        
+        let device = null;
+        let context = null;
+        let pipeline = null;
+        let vertexBuffer = null;
+        let currentShaderCode = '';
+
+        async function initWebGPU() {
+            console.log('navigator.gpu:', navigator.gpu);
+            
+            if (!navigator.gpu) {
+                showError('WebGPU is not supported in this environment');
+                return false;
+            }
+
+            try {
+                console.log('Requesting adapter...');
+                const adapter = await navigator.gpu.requestAdapter();
+                console.log('Adapter:', adapter);
+                
+                if (!adapter) {
+                    showError('Failed to get GPU adapter');
+                    return false;
+                }
+
+                device = await adapter.requestDevice();
+                
+                context = canvas.getContext('webgpu');
+                const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
+                
+                context.configure({
+                    device: device,
+                    format: canvasFormat,
+                    alphaMode: 'opaque'
+                });
+
+                createVertexBuffer();
+                
+                console.log('WebGPU initialized successfully');
+                return true;
+            } catch (error) {
+                showError('WebGPU initialization failed: ' + error.message);
+                return false;
+            }
+        }
+
+        function createVertexBuffer() {
+            const vertices = new Float32Array([
+                -1.0, -1.0,
+                 1.0, -1.0,
+                -1.0,  1.0,
+                -1.0,  1.0,
+                 1.0, -1.0,
+                 1.0,  1.0,
+            ]);
+
+            vertexBuffer = device.createBuffer({
+                size: vertices.byteLength,
+                usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+                mappedAtCreation: true
+            });
+
+            new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
+            vertexBuffer.unmap();
+        }
+
+        function createPipeline(shaderCode) {
+            try {
+                console.log('Creating pipeline with shader:', shaderCode);
+                
+                const shaderModule = device.createShaderModule({
+                    code: shaderCode
+                });
+
+                const pipelineDescriptor = {
+                    layout: 'auto',
+                    vertex: {
+                        module: shaderModule,
+                        entryPoint: 'vs_main',
+                        buffers: [{
+                            arrayStride: 8,
+                            attributes: [{
+                                shaderLocation: 0,
+                                offset: 0,
+                                format: 'float32x2'
+                            }]
+                        }]
+                    },
+                    fragment: {
+                        module: shaderModule,
+                        entryPoint: 'fs_main',
+                        targets: [{
+                            format: navigator.gpu.getPreferredCanvasFormat()
+                        }]
+                    },
+                    primitive: {
+                        topology: 'triangle-list'
+                    }
+                };
+
+                pipeline = device.createRenderPipeline(pipelineDescriptor);
+                console.log('Pipeline created successfully');
+                hideError();
+                return true;
+            } catch (error) {
+                console.error('Shader compilation error:', error);
+                showError('Shader compilation error: ' + error.message);
+                return false;
+            }
+        }
+
+        function render() {
+            if (!device || !pipeline) {
+                console.log('Cannot render: device or pipeline not ready');
+                return;
+            }
+
+            console.log('Rendering...');
+            
+            const commandEncoder = device.createCommandEncoder();
+            const textureView = context.getCurrentTexture().createView();
+
+            const renderPassDescriptor = {
+                colorAttachments: [{
+                    view: textureView,
+                    clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+                    loadOp: 'clear',
+                    storeOp: 'store'
+                }]
+            };
+
+            const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+            passEncoder.setPipeline(pipeline);
+            passEncoder.setVertexBuffer(0, vertexBuffer);
+            passEncoder.draw(6, 1, 0, 0);
+            passEncoder.end();
+
+            device.queue.submit([commandEncoder.finish()]);
+            
+            console.log('Render complete');
+        }
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            console.error(message);
+        }
+
+        function hideError() {
+            errorDiv.style.display = 'none';
+        }
+
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = canvas.clientWidth * dpr;
+            canvas.height = canvas.clientHeight * dpr;
+            console.log('Canvas resized:', canvas.width, 'x', canvas.height);
+            if (pipeline) {
+                render();
+            }
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        window.addEventListener('message', event => {
+            const message = event.data;
+            console.log('Received message:', message);
+            
+            if (message.command === 'updateShader') {
+                currentShaderCode = message.code;
+                console.log('Shader code received, device ready:', !!device);
+                
+                if (device && currentShaderCode) {
+                    if (createPipeline(currentShaderCode)) {
+                        render();
+                    }
+                } else if (currentShaderCode) {
+                    console.log('Shader received but device not ready yet, will compile after init');
+                }
+            }
+        });
+
+        initWebGPU().then(success => {
+            if (success) {
+                resizeCanvas();
+                
+                if (currentShaderCode) {
+                    console.log('Device ready, compiling shader that was received earlier');
+                    if (createPipeline(currentShaderCode)) {
+                        render();
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
