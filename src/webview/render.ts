@@ -1,348 +1,132 @@
+import { WebGPUContext } from './core/webgpu-context';
+import { ResourceFactory } from './core/resource-factory';
+import { UniformManager } from './rendering/uniform-manager';
+import { ShaderCompiler } from './shaders/shader-compiler';
+import { Pipeline } from './rendering/pipeline';
+import { Renderer } from './rendering/renderer';
+import { ErrorDisplay } from './ui/error-display';
+import { CanvasManager } from './ui/canvas-manager';
+import { MouseInput } from './input/mouse-input';
+
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const errorDiv = document.getElementById('error') as HTMLDivElement;
 
-let device: GPUDevice | null = null;
-let context: GPUCanvasContext | null = null;
-let pipeline: GPURenderPipeline | null = null;
-let vertexBuffer: GPUBuffer | null = null;
-let uniformBuffer: GPUBuffer | null = null;
-let uniformBindGroup: GPUBindGroup | null = null;
+let context: WebGPUContext;
+let factory: ResourceFactory;
+let uniformManager: UniformManager;
+let compiler: ShaderCompiler;
+let pipeline: Pipeline;
+let renderer: Renderer;
+let errorDisplay: ErrorDisplay;
+let canvasManager: CanvasManager;
+let mouseInput: MouseInput;
+
 let currentShaderCode: string = '';
 
-let startTime = performance.now();
-let lastFrameTime = performance.now();
-let frameCount = 0;
-
-let mouseX = 0;
-let mouseY = 0;
-let mouseClickX = 0;
-let mouseClickY = 0;
-let mouseButtons = 0;
-
-async function initWebGPU(): Promise<boolean> {
-    console.log('navigator.gpu:', navigator.gpu);
-    
-    if (!navigator.gpu) {
-        showError('WebGPU is not supported in this environment');
-        return false;
-    }
-
-    try {
-        console.log('Requesting adapter...');
-        const adapter = await navigator.gpu.requestAdapter();
-        console.log('Adapter:', adapter);
-        
-        if (!adapter) {
-            showError('Failed to get GPU adapter');
-            return false;
-        }
-
-        device = await adapter.requestDevice();
-        
-        context = canvas.getContext('webgpu');
-        const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
-        
-        context!.configure({
-            device: device,
-            format: canvasFormat,
-            alphaMode: 'opaque'
-        });
-
-        createVertexBuffer();
-        createUniformBuffer();
-        
-        console.log('WebGPU initialized successfully');
-        return true;
-    } catch (error: any) {
-        showError('WebGPU initialization failed: ' + error.message);
-        return false;
-    }
-}
-
-function createVertexBuffer(): void {
-    const vertices = new Float32Array([
-        -1.0, -1.0,
-         1.0, -1.0,
-        -1.0,  1.0,
-        -1.0,  1.0,
-         1.0, -1.0,
-         1.0,  1.0,
-    ]);
-
-    vertexBuffer = device!.createBuffer({
-        size: vertices.byteLength,
-        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        mappedAtCreation: true
-    });
-
-    new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
-    vertexBuffer.unmap();
-}
-
-function createUniformBuffer(): void {
-    const bufferSize = 48;
-    
-    uniformBuffer = device!.createBuffer({
-        size: bufferSize,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-    });
-    
-    console.log('Uniform buffer created, size:', bufferSize);
-}
-
-function createPipelineLayout(): GPUPipelineLayout {
-    const bindGroupLayout = device!.createBindGroupLayout({
-        entries: [{
-            binding: 0,
-            visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-            buffer: {
-                type: 'uniform'
-            }
-        }]
-    });
-    
-    return device!.createPipelineLayout({
-        bindGroupLayouts: [null, null, null, bindGroupLayout]
-    });
-}
-
-function updateUniforms(): void {
-    const currentTime = performance.now();
-    const time = (currentTime - startTime) / 1000.0;
-    const timeDelta = (currentTime - lastFrameTime) / 1000.0;
-    lastFrameTime = currentTime;
-    
-    const data = new ArrayBuffer(48);
-    const view = new DataView(data);
-    
-    view.setFloat32(0, time, true);
-    view.setFloat32(4, timeDelta, true);
-    view.setUint32(8, frameCount, true);
-    
-    view.setFloat32(16, canvas.width, true);
-    view.setFloat32(20, canvas.height, true);
-    view.setFloat32(24, mouseX, true);
-    view.setFloat32(28, mouseY, true);
-    
-    view.setFloat32(32, mouseClickX, true);
-    view.setFloat32(36, mouseClickY, true);
-    view.setUint32(40, mouseButtons, true);
-    
-    device!.queue.writeBuffer(uniformBuffer!, 0, data);
-    
-    frameCount++;
-}
-
-function createBindGroup(): void {
-    if (!pipeline || !uniformBuffer) {
-        return;
-    }
-
-    const bindGroupLayout = device!.createBindGroupLayout({
-        entries: [{
-            binding: 0,
-            visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-            buffer: {
-                type: 'uniform'
-            }
-        }]
-    });
-
-    try {
-        uniformBindGroup = device!.createBindGroup({
-            layout: bindGroupLayout,
-            entries: [{
-                binding: 0,
-                resource: {
-                    buffer: uniformBuffer
-                }
-            }]
-        });
-        
-        console.log('Bind group created');
-    } catch (error) {
-        console.warn('Could not create bind group (shader may not use wgsl_globals):', error);
-        uniformBindGroup = null;
-    }
-}
-
-async function createPipeline(shaderCode: string): Promise<boolean> {
-    try {
-        console.log('Creating pipeline with shader:', shaderCode);
-        
-        const shaderModule = device!.createShaderModule({
-            code: shaderCode
-        });
-
-        const compilationInfo = await shaderModule.getCompilationInfo();
-        
-        for (const message of compilationInfo.messages) {
-            if (message.type === 'error') {
-                const errorText = `Shader compilation error at line ${message.lineNum}:${message.linePos}: ${message.message}`;
-                console.error(errorText);
-                showError(errorText);
-                return false;
-            }
-        }
-
-        const pipelineDescriptor: GPURenderPipelineDescriptor = {
-            layout: createPipelineLayout(),
-            vertex: {
-                module: shaderModule,
-                entryPoint: 'vs_main',
-                buffers: [{
-                    arrayStride: 8,
-                    attributes: [{
-                        shaderLocation: 0,
-                        offset: 0,
-                        format: 'float32x2'
-                    }]
-                }]
-            },
-            fragment: {
-                module: shaderModule,
-                entryPoint: 'fs_main',
-                targets: [{
-                    format: navigator.gpu.getPreferredCanvasFormat()
-                }]
-            },
-            primitive: {
-                topology: 'triangle-list'
-            }
-        };
-
-        pipeline = device!.createRenderPipeline(pipelineDescriptor);
-        console.log('Pipeline created successfully');
-        createBindGroup();
-        hideError();
-        return true;
-    } catch (error: any) {
-        console.error('Pipeline creation error:', error);
-        showError('Pipeline creation error: ' + error.message);
-        return false;
-    }
-}
-
-function render(): void {
-    if (!device || !pipeline) {
-        console.log('Cannot render: device, pipeline or bind group not ready');
-        return;
-    }
-
-    updateUniforms();
-
-    const commandEncoder = device.createCommandEncoder();
-    const textureView = context!.getCurrentTexture().createView();
-
-    const renderPassDescriptor: GPURenderPassDescriptor = {
-        colorAttachments: [{
-            view: textureView,
-            clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-            loadOp: 'clear',
-            storeOp: 'store'
-        }]
-    };
-
-    const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
-    passEncoder.setPipeline(pipeline);
-    if (uniformBindGroup) {
-        passEncoder.setBindGroup(3, uniformBindGroup);
-    }
-    passEncoder.setVertexBuffer(0, vertexBuffer!);
-    passEncoder.draw(6, 1, 0, 0);
-    passEncoder.end();
-
-    device.queue.submit([commandEncoder.finish()]);
-}
-
-function showError(message: string): void {
-    errorDiv.textContent = message;
-    errorDiv.style.display = 'block';
-    console.error(message);
-}
-
-function hideError(): void {
-    errorDiv.style.display = 'none';
-}
-
-function resizeCanvas(): void {
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = canvas.clientWidth * dpr;
-    canvas.height = canvas.clientHeight * dpr;
-    console.log('Canvas resized:', canvas.width, 'x', canvas.height);
-    if (pipeline) {
-        render();
-    }
-}
-
-window.addEventListener('resize', resizeCanvas);
-
-window.addEventListener('message', event => {
+window.addEventListener('message', async (event) => {
     const message = event.data;
     console.log('Received message:', message);
-    
+
     if (message.command === 'updateShader') {
         currentShaderCode = message.code;
-        console.log('Shader code received, device ready:', !!device);
-        
-        if (device && currentShaderCode) {
-            createPipeline(currentShaderCode).then(success => {
-                if (success) {
-                    render();
-                }
-            });
-        } else if (currentShaderCode) {
-            console.log('Shader received but device not ready yet, will compile after init');
+        console.log('Shader code received, length:', currentShaderCode.length);
+
+        if (context) {
+            console.log('Context ready, compiling immediately');
+            await handleShaderUpdate(currentShaderCode);
+        } else {
+            console.log('Context not ready, shader will be compiled after init');
         }
     }
 });
 
-canvas.addEventListener('mousemove', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    mouseX = (e.clientX - rect.left) / rect.width;
-    mouseY = 1.0 - (e.clientY - rect.top) / rect.height;
-});
+async function initialize(): Promise<boolean> {
+    try {
+        context = await WebGPUContext.initialize(canvas);
+        factory = new ResourceFactory(context);
+        uniformManager = new UniformManager(context, factory);
+        compiler = new ShaderCompiler(context);
+        pipeline = new Pipeline(context, compiler, uniformManager);
+        renderer = new Renderer(context, pipeline, uniformManager);
+        errorDisplay = new ErrorDisplay(errorDiv);
+        canvasManager = new CanvasManager(canvas);
+        mouseInput = new MouseInput(canvas);
 
-canvas.addEventListener('mousedown', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    mouseClickX = (e.clientX - rect.left) / rect.width;
-    mouseClickY = 1.0 - (e.clientY - rect.top) / rect.height;
-    
-    if (e.button === 0) mouseButtons |= 1;
-    if (e.button === 1) mouseButtons |= 4;
-    if (e.button === 2) mouseButtons |= 2;
-});
+        const vertices = ResourceFactory.createFullscreenQuadVertices();
+        const vertexBuffer = factory.createVertexBuffer(vertices);
+        renderer.setVertexBuffer(vertexBuffer);
 
-canvas.addEventListener('mouseup', (e) => {
-    if (e.button === 0) mouseButtons &= ~1;
-    if (e.button === 1) mouseButtons &= ~4;
-    if (e.button === 2) mouseButtons &= ~2;
-});
+        setupEventHandlers();
 
-canvas.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-});
+        console.log('Application initialized successfully');
+        return true;
 
-function renderLoop(): void {
-    if (pipeline) {
-        render();
+    } catch (error: any) {
+        errorDisplay.show('Initialization failed: ' + error.message);
+        return false;
     }
-    requestAnimationFrame(renderLoop);
 }
 
-initWebGPU().then(success => {
+function setupEventHandlers(): void {
+    canvasManager.onResize(() => {
+        if (pipeline.isReady()) {
+            renderer.render();
+        }
+    });
+
+    mouseInput.onMove((x, y) => {
+        uniformManager.updateMousePosition(x, y);
+    });
+
+    mouseInput.onClick((x, y) => {
+        uniformManager.updateMouseClick(x, y);
+    });
+
+    mouseInput.onButtonChange((buttons) => {
+        uniformManager.updateMouseButtons(buttons);
+    });
+
+    // window.addEventListener('message', async (event) => {
+    //     const message = event.data;
+    //     console.log('Received message:', message);
+
+    //     if (message.command === 'updateShader') {
+    //         currentShaderCode = message.code; 
+    //         console.log('Shader code received, length:', currentShaderCode.length);
+    //         console.log('Context initialized:', !!context);
+
+    //         if (context) {
+    //             await handleShaderUpdate(currentShaderCode);
+    //         } else {
+    //             console.log('Context not ready, shader will be compiled after init');
+    //         }
+    //     }
+    // });
+}
+
+async function handleShaderUpdate(shaderCode: string): Promise<void> {
+    const success = await pipeline.create(shaderCode);
+
     if (success) {
-        resizeCanvas();
+        errorDisplay.hide();
         
+        if (!renderer.isRendering()) {
+            renderer.startRenderLoop();
+        }
+    } else {
+        errorDisplay.show('Failed to create pipeline. Check shader for errors.');
+    }
+}
+
+initialize().then(async (success) => {
+    if (success) {
+        canvasManager.resize();
+
         if (currentShaderCode) {
-            console.log('Device ready, compiling shader that was received earlier');
-            createPipeline(currentShaderCode).then(success => {
-                if (success) {
-                    renderLoop();
-                }
-            });
+            console.log('Compiling shader received before initialization');
+            await handleShaderUpdate(currentShaderCode);
         } else {
-            renderLoop();
+            console.log('No shader code to compile');
         }
     }
 });

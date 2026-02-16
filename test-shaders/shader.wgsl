@@ -21,8 +21,11 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> FragmentOutput {
+    let x = wgsl_globals.mouse.x;
+    let y = wgsl_globals.mouse.y;
+
     var output = FragmentOutput(
-        vec4f(0.0, 1.0, 1.0, 1.0)
+        vec4f(x, y, 1.0, 1.0)
     );
 
     return output;
