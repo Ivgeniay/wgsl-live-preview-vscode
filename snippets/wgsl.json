@@ -1,0 +1,53 @@
+{
+  "WGSL Basic Shader Template": {
+    "prefix": "wgsl-t",
+    "body": [
+      "struct VertexInput {",
+      "    @location(0) pos: vec2f,",
+      "}",
+      "",
+      "struct VertexOutput {",
+      "    @builtin(position) pos: vec4f,",
+      "}",
+      "",
+      "struct FragmentOutput {",
+      "    @location(0) color: vec4f,",
+      "}",
+      "",
+      "@vertex",
+      "fn vs_main(input: VertexInput) -> VertexOutput {",
+      "    var output = VertexOutput(",
+      "        vec4f(input.pos, 0.0, 1.0)",
+      "    );",
+      "",
+      "    return output;",
+      "}",
+      "",
+      "@fragment",
+      "fn fs_main(input: VertexOutput) -> FragmentOutput {",
+      "    var output = FragmentOutput(",
+      "        vec4f(1.0, 1.0, 1.0, 1.0)",
+      "    );",
+      "",
+      "    return output;",
+      "}"
+    ],
+    "description": "Basic WGSL shader template with vertex and fragment stages"
+  },
+  "WGSL Fullscreen Quad": {
+    "prefix": "wgsl-q",
+    "body": [
+      "@vertex",
+      "fn vs_main(@location(0) position: vec2f) -> @builtin(position) vec4f {",
+      "    return vec4f(position, 0.0, 1.0);",
+      "}",
+      "",
+      "@fragment",
+      "fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {",
+      "    let uv = pos.xy / wgsl_globals.resolution;",
+      "    return vec4f(uv, 0.5, 1.0);",
+      "}"
+    ],
+    "description": "Fullscreen quad shader using wgsl_globals"
+  }
+}

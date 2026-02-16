@@ -4,11 +4,13 @@ Live preview for WGSL (WebGPU Shading Language) shaders with real-time compilati
 
 ## Features
 
-- 🎨 **Live Preview** - See your shader rendered in real-time as you type
-- ⚡ **Instant Feedback** - Shader updates automatically on save (500ms debounce)
-- 🐛 **Error Display** - Clear compilation error messages with line numbers
-- 🎮 **Built-in Uniforms** - Time, resolution, mouse position automatically available
-- 🖼️ **Clean Interface** - Focused rendering view with minimal distractions
+- **Live Preview** - See your shader rendered in real-time as you type
+- **Instant Feedback** - Shader updates automatically on save (500ms debounce)
+- **Error Display** - Clear compilation error messages with line numbers
+- **Built-in Uniforms** - Time, resolution, mouse position automatically available
+- **Clean Interface** - Focused rendering view with minimal distractions
+- **Code Snippets** - Quick shader templates for rapid prototyping
+- **Quick File Creation** - Create new WGSL shaders from Explorer context menu
 
 ## Usage
 
@@ -18,6 +20,21 @@ Live preview for WGSL (WebGPU Shading Language) shaders with real-time compilati
 4. Edit your shader and see changes in real-time
 
 Alternatively, use Command Palette (`Ctrl+Shift+P`) and run **"WGSL: Show Live Preview"**.
+
+### Creating New Shaders
+
+**Method 1: Explorer Context Menu**
+1. Right-click in Explorer (on a folder or empty space)
+2. Select **"WGSL: Create New Shader"**
+3. Enter a filename (e.g., `shader.wgsl`)
+4. A new file with a basic shader template will be created and opened
+
+**Method 2: Code Snippets**
+1. Create or open a `.wgsl` file
+2. Type one of the snippet triggers:
+   - `wgsl-t` - Full shader template with vertex/fragment stages and structs
+   - `wgsl-q` - Simple fullscreen quad shader using `wgsl_globals`
+3. Press `Tab` or `Enter` to insert the template
 
 ## Available Globals
 

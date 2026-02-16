@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const EXCLUDE_EXTENSIONS = ['.ts', '.js', '.map'];
+const EXCLUDE_EXTENSIONS = ['.ts', '.js','.map'];
 
 function copyRecursive(srcDir, destDir, relativePath = '') {
     const currentSrc = path.join(srcDir, relativePath);
